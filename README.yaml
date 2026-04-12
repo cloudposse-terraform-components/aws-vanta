@@ -1,75 +1,331 @@
-name: "template"
-
+name: "aws-vanta"
 # Canonical GitHub repo
-github_repo: "cloudposse-terraform-components/template"
-
+github_repo: "cloudposse-terraform-components/aws-vanta"
 # Short description of this project
 description: |-
-  Description of this component 55
+  This component provisions the `vanta-auditor` IAM role in each AWS account, enabling the
+  [Vanta](https://www.vanta.com/) GRC (Governance, Risk, and Compliance) platform to continuously scan AWS resource
+  configurations. Vanta uses this read-only access to map evidence to compliance frameworks (SOC 2, ISO 27001, HIPAA,
+  PCI DSS, GDPR, etc.).
+
+  **Important**: This component only provisions the IAM role and policies on the AWS side. Configuration, administration,
+  and operation of the Vanta platform itself is managed externally.
+
+  ## Component Features
+
+  This component is responsible for:
+
+  - **Cross-Account IAM Role**: Creates a `vanta-auditor` IAM role that Vanta's scanner role can assume
+  - **Read-Only Access**: Attaches the AWS managed `SecurityAudit` policy for broad read-only security access
+  - **Supplemental Permissions**: Creates and attaches a `VantaAdditionalPermissions` custom policy with IAM Identity
+    Center read access and explicit deny on sensitive data (RDS logs, DataPipeline data)
+  - **Management Account Support**: Optionally attaches `VantaManagementAccountPermissions` for organization-level reads
+    (only in the root account)
+  - **External ID Protection**: Uses an external ID in the trust policy to prevent confused deputy attacks
+  - **Account Verification**: Optional safety check that validates Terraform is running in the correct AWS account
+
+  ## Key Capabilities
+
+  - **Read-Only**: Vanta cannot modify any AWS resources — all permissions are read-only or describe/list
+  - **Metadata Only**: Scans resource configurations and metadata, not application data
+  - **Automatic Evidence Collection**: Vanta continuously maps AWS configurations to compliance controls
+  - **Multi-Framework Support**: SOC 2, ISO 27001, HIPAA, PCI DSS, GDPR, and custom frameworks
+  - **Audit Trail**: All Vanta API calls are logged in CloudTrail as `AssumeRole` from
+    `arn:aws:iam::956993596390:role/scanner`
+
+  ## Architecture
+
+  The component deploys a simple per-account IAM role with no cross-account dependencies:
+
+  ```text
+                       AWS Organization
+
+     Vanta Platform (arn:aws:iam::956993596390:role/scanner)
+          │
+          │  sts:AssumeRole (with ExternalId)
+          │
+          ├──► management account ── vanta-auditor role + SecurityAudit
+          │                          + VantaAdditionalPermissions
+          │                          + VantaManagementAccountPermissions
+          │
+          ├──► security account   ── vanta-auditor role + SecurityAudit
+          │                          + VantaAdditionalPermissions
+          │
+          ├──► audit account      ── vanta-auditor role + SecurityAudit
+          │                          + VantaAdditionalPermissions
+          │
+          ├──► network account    ── (same as above)
+          ├──► dns account        ── (same as above)
+          ├──► automation account ── (same as above)
+          ├──► artifacts account  ── (same as above)
+          ├──► dev account        ── (same as above)
+          ├──► staging account    ── (same as above)
+          └──► prod account       ── (same as above)
+  ```
+
+  ### Why This Architecture?
+
+  - **Per-Account Role**: Each account needs its own IAM role because Vanta scans resources per-account
+  - **No Delegated Administrator**: Unlike GuardDuty/Security Hub, Vanta does not use AWS Organizations delegation
+  - **No Cross-Account Dependencies**: Each account's role is independent — all accounts can be deployed in parallel
+  - **Management Account Extra Policy**: Only the root account needs organization-level read access for account enumeration
+
+  ## Vanta Connection Types
+
+  When connecting AWS in the Vanta dashboard, there are two options:
+
+  **Individual Account** — Connect one AWS account at a time. You paste each account's role ARN into the Vanta dashboard
+  manually. If new accounts are added to the organization later, they must be connected manually in Vanta.
+
+  **Organization (recommended)** — Connect once using the management account. Vanta automatically discovers all accounts
+  in the AWS Organization and scans them. New accounts added in the future are picked up automatically.
+
+  | Aspect                      | Individual Account                      | Organization                                              |
+  |-----------------------------|-----------------------------------------|-----------------------------------------------------------|
+  | **Scope**                   | One account at a time                   | All accounts in the AWS Organization                      |
+  | **Auto-discovery**          | No — each account connected manually    | Yes — new accounts auto-detected                          |
+  | **IAM Role/Policies**       | Identical                               | Identical                                                 |
+  | **Management Account**      | No special requirements                 | Needs `VantaManagementAccountPermissions` for enumeration |
+
+  #### What Changes on the AWS Side?
+
+  **Nothing.** Both methods require the exact same `vanta-auditor` IAM role with the same policies in every account. The
+  difference is purely how the Vanta platform *discovers* accounts:
+
+  - **Individual**: You tell Vanta about each account by pasting the role ARN
+  - **Organization**: Vanta calls `organizations:ListAccounts` from the management account role to enumerate all accounts,
+    then assumes the `vanta-auditor` role in each one
+
+  ## Deployment Model Comparison
+
+  ### Vanta vs Other AWS Security Services
+
+  | Aspect                  | Vanta Integration             | AWS GuardDuty                        | AWS Config                        |
+  |-------------------------|-------------------------------|--------------------------------------|-----------------------------------|
+  | **Purpose**             | GRC evidence collection       | Threat detection                     | Configuration compliance          |
+  | **Deployment Approach** | Per-account IAM role          | Delegated administrator (3 steps)    | Per-account with aggregation      |
+  | **Central Account**     | N/A (Vanta is external SaaS)  | Security (delegated administrator)   | Security (aggregator)             |
+  | **Organization-Wide**   | No (per account)              | Yes                                  | Yes (conformance packs from root) |
+  | **Access Type**         | Read-only (cross-account)     | Service-managed                      | Service-managed                   |
+
+  ## IAM Policies
+
+  ### SecurityAudit (AWS Managed)
+
+  - **ARN**: `arn:aws:iam::aws:policy/SecurityAudit`
+  - **Purpose**: Broad read-only access to security-relevant configurations across all AWS services
+  - **Maintained by**: AWS — automatically updated when new services are added
+  - **Scope**: Describe, Get, List actions across IAM, EC2, S3, RDS, Lambda, ECS, EKS, and many more
+
+  ### VantaAdditionalPermissions (Custom)
+
+  Supplements `SecurityAudit` with Identity Center permissions and denies access to sensitive data:
+
+  | Statement                      | Effect | Purpose                        |
+  |--------------------------------|--------|--------------------------------|
+  | VantaIdentityCenterPermissions | Allow  | IAM Identity Center scanning   |
+  | VantaDenyDataAccess            | Deny   | Block access to sensitive data |
+
+  ### VantaManagementAccountPermissions (Custom, root only)
+
+  Organization-level read access for the management account:
+
+  | Statement                         | Effect | Purpose                 |
+  |-----------------------------------|--------|-------------------------|
+  | VantaManagementAccountPermissions | Allow  | Enumerate org structure |
+
+  ## Security Considerations
+
+  1. **Read-Only Access**: All permissions are read-only — Vanta cannot create, modify, or delete any AWS resources
+  2. **Explicit Deny**: Sensitive data actions are explicitly denied, even if `SecurityAudit` would allow them
+  3. **External ID**: The trust policy requires a matching external ID, preventing confused deputy attacks
+  4. **Scoped Principal**: The trust policy allows only `arn:aws:iam::956993596390:role/scanner`, not the entire Vanta account
+  5. **CloudTrail Audit**: Every API call from Vanta is logged in CloudTrail
+  6. **Minimal Permissions**: The management account policy only grants organization read access, not administrative permissions
 
 usage: |-
-  **Stack Level**: Regional or Global
+  **Stack Level**: Global
 
-  Here's an example snippet for how to use this component.
+  The following are example snippets for how to use this component.
+
+  ### Default Configuration (`stacks/catalog/aws-vanta/defaults.yaml`)
 
   ```yaml
   components:
     terraform:
-      foo:
+      aws-vanta/defaults:
+        metadata:
+          type: abstract
+          component: "aws-vanta"
         vars:
           enabled: true
+          vanta_account_id: "956993596390"
+          iam_role_name: "vanta-auditor"
+          external_id: "<external-id-from-vanta-dashboard>"
+          management_account_permissions_enabled: false
   ```
 
+  ### Member Account Configuration (`stacks/catalog/aws-vanta/member-account.yaml`)
 
+  ```yaml
+  import:
+    - catalog/aws-vanta/defaults
 
+  components:
+    terraform:
+      aws-vanta:
+        metadata:
+          component: "aws-vanta"
+          inherits:
+            - "aws-vanta/defaults"
+  ```
 
+  ### Management Account Configuration (`stacks/catalog/aws-vanta/management-account.yaml`)
+
+  ```yaml
+  import:
+    - catalog/aws-vanta/defaults
+
+  components:
+    terraform:
+      aws-vanta:
+        metadata:
+          component: "aws-vanta"
+          inherits:
+            - "aws-vanta/defaults"
+        vars:
+          management_account_permissions_enabled: true
+  ```
+
+  ## Prerequisites
+
+  Before deploying this component:
+
+  1. **Vanta Account**: Ensure your Vanta account is active and the AWS integration is initiated in the Vanta dashboard.
+  2. **Vanta External ID**: Obtain the external ID from the Vanta dashboard and configure it in `defaults.yaml`.
+
+  ## Provisioning
+
+  ### No Dependencies — Deploy All Accounts in Parallel
+
+  Unlike other security services, Vanta has no inter-service dependencies. All accounts can be provisioned simultaneously.
+
+  ```bash
+  # Management account:
+  atmos terraform apply aws-vanta -s core-gbl-root
+
+  # Core tenant:
+  atmos terraform apply aws-vanta -s core-gbl-security
+  atmos terraform apply aws-vanta -s core-gbl-audit
+  atmos terraform apply aws-vanta -s core-gbl-auto
+  atmos terraform apply aws-vanta -s core-gbl-artifacts
+  atmos terraform apply aws-vanta -s core-gbl-dns
+  atmos terraform apply aws-vanta -s core-gbl-network
+
+  # Platform tenant:
+  atmos terraform apply aws-vanta -s plat-gbl-sandbox
+  atmos terraform apply aws-vanta -s plat-gbl-dev
+  atmos terraform apply aws-vanta -s plat-gbl-staging
+  atmos terraform apply aws-vanta -s plat-gbl-prod
+  ```
+
+  ### Post-Deployment Steps
+
+  After all IAM roles are deployed:
+
+  1. **Provide Management Account Role ARN to Vanta**: Copy the `vanta_auditor_role_arn` output from the
+     management account deployment and enter it in the Vanta dashboard
+  2. **Configure Regions in Vanta**: Select all regions where you have resources in the Vanta AWS integration settings
+  3. **Wait for Initial Scan**: Vanta takes up to 2 hours to complete the initial resource scan
+  4. **Verify Connection**: Check the Vanta dashboard for successful integration status across all accounts
+
+  ## Troubleshooting
+
+  ### Vanta Cannot Assume Role
+
+  **Problem**: Vanta dashboard shows "Unable to connect" or "Access denied" for an account.
+
+  **Solution**:
+
+  1. Verify the external ID in `defaults.yaml` matches the value in the Vanta dashboard
+  2. Check the trust policy allows `arn:aws:iam::956993596390:role/scanner`:
+     ```bash
+     aws iam get-role --role-name vanta-auditor --query 'Role.AssumeRolePolicyDocument'
+     ```
+  3. Verify both policies are attached:
+     ```bash
+     aws iam list-attached-role-policies --role-name vanta-auditor
+     ```
+
+  ### Missing Permissions in Vanta Scan
+
+  **Problem**: Vanta reports incomplete scans or missing evidence for certain services.
+
+  **Solution**:
+
+  1. Check if `VantaAdditionalPermissions` policy is attached
+  2. Verify `SecurityAudit` managed policy is current (AWS updates it automatically)
+  3. For the management account, verify `VantaManagementAccountPermissions` is attached
+  4. Check Vanta's help docs for any newly required permissions
+
+  ### External ID Changed
+
+  **Problem**: Vanta regenerated the external ID and existing roles no longer work.
+
+  **Solution**:
+
+  1. Update `external_id` in `stacks/catalog/aws-vanta/defaults.yaml`
+  2. Redeploy all accounts
+
+  <!-- prettier-ignore-start -->
+  <!-- prettier-ignore-end -->
+
+references:
+  - name: "Connecting Vanta to an AWS Organization"
+    description: "Official Vanta documentation for connecting an AWS Organization"
+    url: "https://help.vanta.com/en/articles/11345628-connecting-vanta-aws-organization"
+  - name: "Connecting AWS with CloudFormation"
+    description: "Vanta documentation for connecting AWS with CloudFormation"
+    url: "https://help.vanta.com/en/articles/11345623-connecting-aws-with-cloudformation"
+  - name: "VantaAdditionalPermissions Policy Details"
+    description: "Vanta documentation for modifying the VantaAdditionalPermission policy"
+    url: "https://help.vanta.com/en/articles/11345613-modifying-the-vantaadditionalpermission-policy-for-individual-aws-accounts"
+  - name: "AWS SecurityAudit Policy"
+    description: "AWS managed policy reference for SecurityAudit"
+    url: "https://docs.aws.amazon.com/aws-managed-policy/latest/reference/SecurityAudit.html"
+  - name: cloudposse-terraform-components
+    url: https://github.com/orgs/cloudposse-terraform-components/repositories
+    description: "Cloud Posse's upstream component"
 
 tags:
-  - terraform
-  - terraform-modules
-  - aws
-  - components
-  - terraform-components
-  - root
-  - geodesic
-  - reference-implementation
-  - reference-architecture
+  - component/vanta
+  - layer/security-and-compliance
+  - provider/aws
 
 # Categories of this project
 categories:
-  - terraform-modules/root
-  - terraform-components
+  - component/vanta
+  - layer/security-and-compliance
+  - provider/aws
 
 # License of this project
 license: "APACHE2"
 
 # Badges to display
 badges:
-  - name: "Latest Release"
-    image: "https://img.shields.io/github/release/cloudposse-terraform-components/template.svg?style=for-the-badge"
-    url: "https://github.com/cloudposse-terraform-components/template/releases/latest"
-  - name: "Slack Community"
-    image: "https://slack.cloudposse.com/for-the-badge.svg"
-    url: "https://slack.cloudposse.com"
-
-references:
-  - name: "Cloud Posse Documentation"
-    description: "Complete documentation for the Cloud Posse solution"
-    url: "https://docs.cloudposse.com"
-  - name: "Reference Architectures"
-    description: "Launch effortlessly with our turnkey reference architectures, built either by your team or ours."
-    url: "https://cloudposse.com/"
+  - name: Latest Release
+    image: https://img.shields.io/github/release/cloudposse-terraform-components/aws-vanta.svg?style=for-the-badge
+    url: https://github.com/cloudposse-terraform-components/aws-vanta/releases/latest
+  - name: Slack Community
+    image: https://slack.cloudposse.com/for-the-badge.svg
+    url: https://slack.cloudposse.com
 
 related:
-- name: "Cloud Posse Terraform Modules"
-  description: Our collection of reusable Terraform modules used by our reference architectures.
-  url: "https://docs.cloudposse.com/modules/"
-- name: "Atmos"
-  description: "Atmos is like docker-compose but for your infrastructure"
-  url: "https://atmos.tools"
+  - name: "Cloud Posse Terraform Modules"
+    description: Our collection of reusable Terraform modules used by our reference architectures.
+    url: "https://docs.cloudposse.com/modules/"
+  - name: "Atmos"
+    description: "Atmos is like docker-compose but for your infrastructure"
+    url: "https://atmos.tools"
 
 contributors: [] # If included generates contribs
-
-
-
-

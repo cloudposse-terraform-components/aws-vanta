@@ -1,6 +1,6 @@
 components:
   terraform:
-    aws-vanta/basic:
+    aws-vanta/management-account:
       metadata:
         component: target
       vars:
@@ -8,4 +8,4 @@ components:
         external_id: "test-external-id-12345"
         iam_role_name: "vanta-auditor"
         vanta_account_id: "956993596390"
-        management_account_permissions_enabled: false
+        management_account_permissions_enabled: true
