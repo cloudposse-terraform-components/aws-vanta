@@ -32,7 +32,7 @@ func (s *ComponentSuite) TestBasic() {
 	assert.NotEmpty(s.T(), roleArn)
 
 	roleName := atmos.Output(s.T(), options, "vanta_auditor_role_name")
-	assert.Equal(s.T(), "vanta-auditor-basic", roleName)
+	assert.Equal(s.T(), "vanta-auditor", roleName)
 
 	additionalPolicyArn := atmos.Output(s.T(), options, "vanta_additional_permissions_policy_arn")
 	assert.NotEmpty(s.T(), additionalPolicyArn)
@@ -41,7 +41,7 @@ func (s *ComponentSuite) TestBasic() {
 	managementPolicyArn := atmos.Output(s.T(), options, "vanta_management_account_permissions_policy_arn")
 	assert.Empty(s.T(), managementPolicyArn)
 
-	// Verify the IAM role exists and has the correct trust policy
+	// Verify the IAM role exists
 	cfg, err := config.LoadDefaultConfig(context.Background(), config.WithRegion(testAwsRegion))
 	require.NoError(s.T(), err)
 	iamClient := iam.NewFromConfig(cfg)
@@ -58,7 +58,7 @@ func (s *ComponentSuite) TestBasic() {
 	})
 	require.NoError(s.T(), err)
 
-	// Verify exactly 2 policies attached (SecurityAudit + VantaAdditionalPermissions)
+	// Verify exactly 2 policies attached (SecurityAudit + additional permissions)
 	assert.Equal(s.T(), 2, len(policies.AttachedPolicies))
 
 	policyArns := make([]string, len(policies.AttachedPolicies))
@@ -81,7 +81,7 @@ func (s *ComponentSuite) TestManagementAccount() {
 	assert.NotEmpty(s.T(), roleArn)
 
 	roleName := atmos.Output(s.T(), options, "vanta_auditor_role_name")
-	assert.Equal(s.T(), "vanta-auditor-mgmt", roleName)
+	assert.Equal(s.T(), "vanta-auditor", roleName)
 
 	additionalPolicyArn := atmos.Output(s.T(), options, "vanta_additional_permissions_policy_arn")
 	assert.NotEmpty(s.T(), additionalPolicyArn)
