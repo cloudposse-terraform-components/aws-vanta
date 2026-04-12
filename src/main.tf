@@ -19,7 +19,9 @@ data "aws_partition" "current" {
   count = local.enabled ? 1 : 0
 }
 
-# Trust policy: allow Vanta's AWS account to assume the role with external ID
+# Trust policy: allow Vanta's AWS accounts to assume the role with external ID.
+# Vanta operates from multiple AWS accounts across regions — all must be trusted.
+# See: https://help.vanta.com/en/articles/11345698-porting-aws-integrations-across-regions
 data "aws_iam_policy_document" "assume_role" {
   count = local.enabled ? 1 : 0
 
@@ -30,7 +32,7 @@ data "aws_iam_policy_document" "assume_role" {
 
     principals {
       type        = "AWS"
-      identifiers = ["arn:${local.partition}:iam::${var.vanta_account_id}:role/scanner"]
+      identifiers = [for id in var.vanta_account_ids : "arn:${local.partition}:iam::${id}:role/scanner"]
     }
 
     condition {

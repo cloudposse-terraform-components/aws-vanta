@@ -34,8 +34,7 @@ This component is responsible for:
 - **Metadata Only**: Scans resource configurations and metadata, not application data
 - **Automatic Evidence Collection**: Vanta continuously maps AWS configurations to compliance controls
 - **Multi-Framework Support**: SOC 2, ISO 27001, HIPAA, PCI DSS, GDPR, and custom frameworks
-- **Audit Trail**: All Vanta API calls are logged in CloudTrail as `AssumeRole` from
-  `arn:aws:iam::956993596390:role/scanner`
+- **Audit Trail**: All Vanta API calls are logged in CloudTrail as `AssumeRole` from Vanta's scanner roles
 
 ## Architecture
 
@@ -44,7 +43,7 @@ The component deploys a simple per-account IAM role with no cross-account depend
 ```text
                      AWS Organization
 
-   Vanta Platform (arn:aws:iam::956993596390:role/scanner)
+   Vanta Platform (scanner roles from multiple Vanta AWS accounts)
         │
         │  sts:AssumeRole (with ExternalId)
         │
@@ -91,10 +90,11 @@ in the AWS Organization and scans them. New accounts added in the future are pic
 | **IAM Role/Policies**       | Identical                               | Identical                                                 |
 | **Management Account**      | No special requirements                 | Needs `VantaManagementAccountPermissions` for enumeration |
 
-#### What Changes on the AWS Side?
+### What Changes on the AWS Side?
 
-**Nothing.** Both methods require the exact same `vanta-auditor` IAM role with the same policies in every account. The
-difference is purely how the Vanta platform *discovers* accounts:
+**Nothing.** Both methods require the same `vanta-auditor` IAM role in every account (the management account always
+includes the extra `VantaManagementAccountPermissions` policy regardless of connection type). The only difference is
+how the Vanta platform *discovers* accounts:
 
 - **Individual**: You tell Vanta about each account by pasting the role ARN
 - **Organization**: Vanta calls `organizations:ListAccounts` from the management account role to enumerate all accounts,
@@ -143,7 +143,7 @@ Organization-level read access for the management account:
 1. **Read-Only Access**: All permissions are read-only — Vanta cannot create, modify, or delete any AWS resources
 2. **Explicit Deny**: Sensitive data actions are explicitly denied, even if `SecurityAudit` would allow them
 3. **External ID**: The trust policy requires a matching external ID, preventing confused deputy attacks
-4. **Scoped Principal**: The trust policy allows only `arn:aws:iam::956993596390:role/scanner`, not the entire Vanta account
+4. **Scoped Principal**: The trust policy allows only Vanta's `scanner` roles from specific AWS accounts, not entire accounts
 5. **CloudTrail Audit**: Every API call from Vanta is logged in CloudTrail
 6. **Minimal Permissions**: The management account policy only grants organization read access, not administrative permissions
 ## Usage
@@ -163,7 +163,6 @@ components:
         component: "aws-vanta"
       vars:
         enabled: true
-        vanta_account_id: "956993596390"
         iam_role_name: "vanta-auditor"
         external_id: "<external-id-from-vanta-dashboard>"
         management_account_permissions_enabled: false
@@ -252,7 +251,7 @@ After all IAM roles are deployed:
 **Solution**:
 
 1. Verify the external ID in `defaults.yaml` matches the value in the Vanta dashboard
-2. Check the trust policy allows `arn:aws:iam::956993596390:role/scanner`:
+2. Check the trust policy allows Vanta's scanner roles:
    ```bash
    aws iam get-role --role-name vanta-auditor --query 'Role.AssumeRolePolicyDocument'
    ```
@@ -358,7 +357,7 @@ After all IAM roles are deployed:
 | <a name="input_stage"></a> [stage](#input\_stage) | ID element. Usually used to indicate role, e.g. 'prod', 'staging', 'source', 'build', 'test', 'deploy', 'release' | `string` | `null` | no |
 | <a name="input_tags"></a> [tags](#input\_tags) | Additional tags (e.g. `{'BusinessUnit': 'XYZ'}`).<br/>Neither the tag keys nor the tag values will be modified by this module. | `map(string)` | `{}` | no |
 | <a name="input_tenant"></a> [tenant](#input\_tenant) | ID element \_(Rarely used, not included by default)\_. A customer identifier, indicating who this instance of a resource is for | `string` | `null` | no |
-| <a name="input_vanta_account_id"></a> [vanta\_account\_id](#input\_vanta\_account\_id) | Vanta's AWS account ID used in the IAM role trust policy for cross-account access | `string` | `"956993596390"` | no |
+| <a name="input_vanta_account_ids"></a> [vanta\_account\_ids](#input\_vanta\_account\_ids) | List of Vanta's AWS account IDs used in the IAM role trust policy for cross-account access.<br/>Vanta operates from multiple AWS accounts across regions. All three must be trusted for full<br/>multi-region support. See: https://help.vanta.com/en/articles/11345698-porting-aws-integrations-across-regions | `list(string)` | <pre>[<br/>  "956993596390",<br/>  "850507053895",<br/>  "654654195764"<br/>]</pre> | no |
 
 ## Outputs
 

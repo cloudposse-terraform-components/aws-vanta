@@ -57,6 +57,9 @@ func (s *ComponentSuite) TestBasic() {
 	})
 	require.NoError(s.T(), err)
 
+	// Verify exactly 2 policies attached (SecurityAudit + VantaAdditionalPermissions)
+	assert.Equal(s.T(), 2, len(policies.AttachedPolicies))
+
 	policyArns := make([]string, len(policies.AttachedPolicies))
 	for i, p := range policies.AttachedPolicies {
 		policyArns[i] = *p.PolicyArn

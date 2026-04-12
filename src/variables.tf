@@ -78,10 +78,28 @@ variable "root_account_stage" {
   DOC
 }
 
-variable "vanta_account_id" {
-  type        = string
-  description = "Vanta's AWS account ID used in the IAM role trust policy for cross-account access"
-  default     = "956993596390"
+variable "vanta_account_ids" {
+  type        = list(string)
+  description = <<-DOC
+  List of Vanta's AWS account IDs used in the IAM role trust policy for cross-account access.
+  Vanta operates from multiple AWS accounts across regions. All three must be trusted for full
+  multi-region support. See: https://help.vanta.com/en/articles/11345698-porting-aws-integrations-across-regions
+  DOC
+  default = [
+    "956993596390",
+    "850507053895",
+    "654654195764",
+  ]
+
+  validation {
+    condition     = length(var.vanta_account_ids) > 0
+    error_message = "vanta_account_ids must contain at least one AWS account ID."
+  }
+
+  validation {
+    condition     = alltrue([for id in var.vanta_account_ids : can(regex("^[0-9]{12}$", id))])
+    error_message = "All vanta_account_ids must be valid 12-digit AWS account IDs."
+  }
 }
 
 variable "external_id" {
@@ -91,6 +109,11 @@ variable "external_id" {
   Obtain this value from the Vanta dashboard or from your Vanta consultant.
   DOC
   sensitive   = true
+
+  validation {
+    condition     = length(var.external_id) > 0
+    error_message = "external_id must not be empty. This value is required for confused deputy protection in the IAM trust policy."
+  }
 }
 
 variable "iam_role_name" {

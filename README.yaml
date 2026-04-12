@@ -30,8 +30,7 @@ description: |-
   - **Metadata Only**: Scans resource configurations and metadata, not application data
   - **Automatic Evidence Collection**: Vanta continuously maps AWS configurations to compliance controls
   - **Multi-Framework Support**: SOC 2, ISO 27001, HIPAA, PCI DSS, GDPR, and custom frameworks
-  - **Audit Trail**: All Vanta API calls are logged in CloudTrail as `AssumeRole` from
-    `arn:aws:iam::956993596390:role/scanner`
+  - **Audit Trail**: All Vanta API calls are logged in CloudTrail as `AssumeRole` from Vanta's scanner roles
 
   ## Architecture
 
@@ -40,7 +39,7 @@ description: |-
   ```text
                        AWS Organization
 
-     Vanta Platform (arn:aws:iam::956993596390:role/scanner)
+     Vanta Platform (scanner roles from multiple Vanta AWS accounts)
           │
           │  sts:AssumeRole (with ExternalId)
           │
@@ -87,10 +86,11 @@ description: |-
   | **IAM Role/Policies**       | Identical                               | Identical                                                 |
   | **Management Account**      | No special requirements                 | Needs `VantaManagementAccountPermissions` for enumeration |
 
-  #### What Changes on the AWS Side?
+  ### What Changes on the AWS Side?
 
-  **Nothing.** Both methods require the exact same `vanta-auditor` IAM role with the same policies in every account. The
-  difference is purely how the Vanta platform *discovers* accounts:
+  **Nothing.** Both methods require the same `vanta-auditor` IAM role in every account (the management account always
+  includes the extra `VantaManagementAccountPermissions` policy regardless of connection type). The only difference is
+  how the Vanta platform *discovers* accounts:
 
   - **Individual**: You tell Vanta about each account by pasting the role ARN
   - **Organization**: Vanta calls `organizations:ListAccounts` from the management account role to enumerate all accounts,
@@ -139,7 +139,7 @@ description: |-
   1. **Read-Only Access**: All permissions are read-only — Vanta cannot create, modify, or delete any AWS resources
   2. **Explicit Deny**: Sensitive data actions are explicitly denied, even if `SecurityAudit` would allow them
   3. **External ID**: The trust policy requires a matching external ID, preventing confused deputy attacks
-  4. **Scoped Principal**: The trust policy allows only `arn:aws:iam::956993596390:role/scanner`, not the entire Vanta account
+  4. **Scoped Principal**: The trust policy allows only Vanta's `scanner` roles from specific AWS accounts, not entire accounts
   5. **CloudTrail Audit**: Every API call from Vanta is logged in CloudTrail
   6. **Minimal Permissions**: The management account policy only grants organization read access, not administrative permissions
 
@@ -159,7 +159,6 @@ usage: |-
           component: "aws-vanta"
         vars:
           enabled: true
-          vanta_account_id: "956993596390"
           iam_role_name: "vanta-auditor"
           external_id: "<external-id-from-vanta-dashboard>"
           management_account_permissions_enabled: false
@@ -248,7 +247,7 @@ usage: |-
   **Solution**:
 
   1. Verify the external ID in `defaults.yaml` matches the value in the Vanta dashboard
-  2. Check the trust policy allows `arn:aws:iam::956993596390:role/scanner`:
+  2. Check the trust policy allows Vanta's scanner roles:
      ```bash
      aws iam get-role --role-name vanta-auditor --query 'Role.AssumeRolePolicyDocument'
      ```

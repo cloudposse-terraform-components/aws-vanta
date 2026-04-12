@@ -6,6 +6,3 @@ components:
       vars:
         enabled: true
         external_id: "test-external-id-12345"
-        iam_role_name: "vanta-auditor"
-        vanta_account_id: "956993596390"
-        management_account_permissions_enabled: false
