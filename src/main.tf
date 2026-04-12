@@ -101,7 +101,7 @@ data "aws_iam_policy_document" "vanta_additional_permissions" {
 resource "aws_iam_policy" "vanta_additional_permissions" {
   count = local.enabled ? 1 : 0
 
-  name        = "VantaAdditionalPermissions"
+  name        = "${var.iam_role_name}-additional-permissions"
   description = "Additional read-only permissions for Vanta auditor beyond SecurityAudit"
   policy      = data.aws_iam_policy_document.vanta_additional_permissions[0].json
   tags        = local.tags
@@ -137,7 +137,7 @@ data "aws_iam_policy_document" "vanta_management_account_permissions" {
 resource "aws_iam_policy" "vanta_management_account_permissions" {
   count = local.management_account_permissions_enabled ? 1 : 0
 
-  name        = "VantaManagementAccountPermissions"
+  name        = "${var.iam_role_name}-management-account-permissions"
   description = "Organization-level read permissions for Vanta auditor in the management account"
   policy      = data.aws_iam_policy_document.vanta_management_account_permissions[0].json
   tags        = local.tags

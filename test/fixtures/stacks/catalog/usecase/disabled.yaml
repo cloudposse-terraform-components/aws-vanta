@@ -6,3 +6,4 @@ components:
       vars:
         enabled: false
         external_id: "test-external-id-12345"
+        iam_role_name: "vanta-auditor-disabled"

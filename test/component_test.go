@@ -32,11 +32,12 @@ func (s *ComponentSuite) TestBasic() {
 	assert.NotEmpty(s.T(), roleArn)
 
 	roleName := atmos.Output(s.T(), options, "vanta_auditor_role_name")
-	assert.Equal(s.T(), "vanta-auditor", roleName)
+	assert.Equal(s.T(), "vanta-auditor-basic", roleName)
 
 	additionalPolicyArn := atmos.Output(s.T(), options, "vanta_additional_permissions_policy_arn")
 	assert.NotEmpty(s.T(), additionalPolicyArn)
 
+	// Management account policy should be empty for basic (member account) deployment
 	managementPolicyArn := atmos.Output(s.T(), options, "vanta_management_account_permissions_policy_arn")
 	assert.Empty(s.T(), managementPolicyArn)
 
@@ -80,7 +81,7 @@ func (s *ComponentSuite) TestManagementAccount() {
 	assert.NotEmpty(s.T(), roleArn)
 
 	roleName := atmos.Output(s.T(), options, "vanta_auditor_role_name")
-	assert.Equal(s.T(), "vanta-auditor", roleName)
+	assert.Equal(s.T(), "vanta-auditor-mgmt", roleName)
 
 	additionalPolicyArn := atmos.Output(s.T(), options, "vanta_additional_permissions_policy_arn")
 	assert.NotEmpty(s.T(), additionalPolicyArn)
