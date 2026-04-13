@@ -2,6 +2,7 @@ package test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -21,18 +22,31 @@ const (
 	testAwsRegion = "us-east-2"
 )
 
+// uniqueVars returns additionalVars with a unique iam_role_name per test case.
+// This prevents IAM name collisions when Terraform and OpenTofu test suites
+// run in parallel in the same AWS account.
+func (s *ComponentSuite) uniqueVars() *map[string]interface{} {
+	roleName := fmt.Sprintf("vanta-auditor-%s", s.Config.RandomIdentifier)
+	vars := map[string]interface{}{
+		"iam_role_name": roleName,
+	}
+	return &vars
+}
+
 func (s *ComponentSuite) TestBasic() {
 	const component = "aws-vanta/basic"
 
-	defer s.DestroyAtmosComponent(s.T(), component, testStack, nil)
-	options, _ := s.DeployAtmosComponent(s.T(), component, testStack, nil)
+	vars := s.uniqueVars()
+
+	defer s.DestroyAtmosComponent(s.T(), component, testStack, vars)
+	options, _ := s.DeployAtmosComponent(s.T(), component, testStack, vars)
 	assert.NotNil(s.T(), options)
 
 	roleArn := atmos.Output(s.T(), options, "vanta_auditor_role_arn")
 	assert.NotEmpty(s.T(), roleArn)
 
 	roleName := atmos.Output(s.T(), options, "vanta_auditor_role_name")
-	assert.Equal(s.T(), "vanta-auditor", roleName)
+	assert.Contains(s.T(), roleName, "vanta-auditor-")
 
 	additionalPolicyArn := atmos.Output(s.T(), options, "vanta_additional_permissions_policy_arn")
 	assert.NotEmpty(s.T(), additionalPolicyArn)
@@ -67,21 +81,23 @@ func (s *ComponentSuite) TestBasic() {
 	}
 	assert.Contains(s.T(), policyArns, additionalPolicyArn)
 
-	s.DriftTest(component, testStack, nil)
+	s.DriftTest(component, testStack, vars)
 }
 
 func (s *ComponentSuite) TestManagementAccount() {
 	const component = "aws-vanta/management-account"
 
-	defer s.DestroyAtmosComponent(s.T(), component, testStack, nil)
-	options, _ := s.DeployAtmosComponent(s.T(), component, testStack, nil)
+	vars := s.uniqueVars()
+
+	defer s.DestroyAtmosComponent(s.T(), component, testStack, vars)
+	options, _ := s.DeployAtmosComponent(s.T(), component, testStack, vars)
 	assert.NotNil(s.T(), options)
 
 	roleArn := atmos.Output(s.T(), options, "vanta_auditor_role_arn")
 	assert.NotEmpty(s.T(), roleArn)
 
 	roleName := atmos.Output(s.T(), options, "vanta_auditor_role_name")
-	assert.Equal(s.T(), "vanta-auditor", roleName)
+	assert.Contains(s.T(), roleName, "vanta-auditor-")
 
 	additionalPolicyArn := atmos.Output(s.T(), options, "vanta_additional_permissions_policy_arn")
 	assert.NotEmpty(s.T(), additionalPolicyArn)
@@ -114,7 +130,7 @@ func (s *ComponentSuite) TestManagementAccount() {
 	assert.Contains(s.T(), policyArns, additionalPolicyArn)
 	assert.Contains(s.T(), policyArns, managementPolicyArn)
 
-	s.DriftTest(component, testStack, nil)
+	s.DriftTest(component, testStack, vars)
 }
 
 func (s *ComponentSuite) TestEnabledFlag() {
