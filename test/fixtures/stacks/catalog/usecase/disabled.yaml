@@ -1,7 +1,8 @@
 components:
   terraform:
-    example/disabled:
+    aws-vanta/disabled:
       metadata:
         component: target
       vars:
         enabled: false
+        external_id: "test-external-id-12345"

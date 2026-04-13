@@ -1,8 +1,9 @@
 components:
   terraform:
-    aws-vanta/basic:
+    aws-vanta/management-account:
       metadata:
         component: target
       vars:
         enabled: true
         external_id: "test-external-id-12345"
+        management_account_permissions_enabled: true
